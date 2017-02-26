@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta name="description" content="HTML5 Audio Spectrum Visualizer">
+    <title>HTML5 Audio API showcase | Audio visualizer</title>
+    <style type="text/css">
+        html, body {
+            margin: 0;
+            font-family: arial, "Microsoft YaHei";
+            background-color: #FFFFFF;
+            color: #333;
+            background-color: #000;
+            width: 100%;
+            height: 100%;
+        }
+
+        img {
+            position: absolute;
+            width: 1366px;
+            height: 700px;
+            display: block;
+            left: 0px;
+            top: 0;
+            z-index: 0;
+
+        }
+
+        #fileWrapper {
+            transition: all 0.5s ease;
+            opacity: 0.1;
+            position: absolute;
+            left: 10%;
+            top: 10%;
+            z-index: 2;
+            width: 500px;
+        }
+
+        #fileWrapper:hover {
+        opacity: 1 !important;
+        }
+
+        #footer {
+            height: 200px;
+            overflow: hidden;
+            width: 632px;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            position: absolute;
+            top: 50%;
+            margin-top: -200px;
+            left: 50%;
+            margin-left: -312px;
+            font: 900 40px/200px "Forte", "mircosoft yahei";
+            text-shadow: 0.1em 0.1em 0.2em #333;
+            text-align: center;
+            color: #fff;
+            z-index: 99;
+        }
+
+        #canvassss {
+            position: absolute;
+            left: 50%;
+            top: 50%;
+        }
+
+        .warp {
+            width: 100%;
+            height: 100%;
+        }
+
+        .xianshi {
+
+        }
+    </style>
+    <script src="js/konva.js"></script>
+</head>
+<body>
+<div id="fileWrapper" class="file_wrapper">
+    <div id="info">
+        <!--HTML5 Audio API | An Audio Viusalizer-->
+    </div>
+    <label for="uploadedFile">
+        <!--选择你要播放的文件(mp3/wav):-->
+    </label>
+    <input type="file" id="uploadedFile"></input>
+</div>
+<div class="xianshi">
+
+</div>
+<div id="footer"></div>
+<div id="container"></div>
+<img src="./image/1.jpg" alt="" id="bg"/>
+
+<div class="warp">
+    <canvas id="canvassss"></canvas>
+</div>
+
+<script type="text/javascript">
+
+    window.onload = function () {
+        new Visualizer().ini();
+        var cas = document.getElementById("canvassss");
+        var bg = document.getElementById("bg");
+
+
+        resize();
+        //封装一个调整页面元素使其铺满全屏的方法
+        function resize() {
+            cas.height = window.innerHeight;
+            cas.style.marginTop = -window.innerHeight / 2 + "px";
+            cas.style.marginLeft = -404 + "px";
+            cas.width = 808;
+            bg.style.width = window.innerWidth + "px";
+            bg.style.height = window.innerHeight + "px";
+        }
+
+        window.onresize = function () {
+            resize();
+        };
+
+
+    };
+    //使用构造函数创建对象
+    var Visualizer = function () {
+        this.file = null, //要处理的文件
+                this.fileName = null, //要处理的文件名
+                this.audioContext = null,//进行音频处理的上下文，稍后会进行初始化
+                this.source = null, //保存音频
+                this.info = document.getElementById('info').innerHTML, //this used to upgrade the UI information
+                this.infoUpdateId = null, //to sotore the setTimeout ID and clear the interval
+                this.animationId = null,
+                this.status = 0, //播放 1 和停止的标志
+                this.forceStop = false,
+                this.allCapsReachBottom = false
+    };
+    Visualizer.prototype = {
+        ini: function () {
+            this._prepareAPI();
+            this._addEventListner();
+        },
+        _prepareAPI: function () {
+            //统一前缀，兼容浏览器
+            window.AudioContext = window.AudioContext || window.webkitAudioContext || window.mozAudioContext || window.msAudioContext;
+            //这里也要对requestAnimationFrame打个补丁，后面要用到
+            window.requestAnimationFrame = window.requestAnimationFrame || window.webkitRequestAnimationFrame || window.mozRequestAnimationFrame || window.msRequestAnimationFrame;
+            window.cancelAnimationFrame = window.cancelAnimationFrame || window.webkitCancelAnimationFrame || window.mozCancelAnimationFrame || window.msCancelAnimationFrame;
+            try {//安全的实例化一个AudioContext并赋值到Visualizer的audioContext属性上，方便后面处理音频使用
+                this.audioContext = new AudioContext();
+            } catch (e) {//如果浏览器不兼容，则提示
+                this._updateInfo('你的浏览器不支持AudioContext', false);
+                console.log(e);
+            }
+        },
+        _addEventListner: function () {
+            var that = this,
+                    audioInput = document.getElementById('uploadedFile'),
+                    dropContainer = document.getElementsByTagName("canvas")[0];
+            //监听是否有文件被选中
+            audioInput.onchange = function () {
+                if (that.audioContext === null) {
+                    return;
+                }
+                ;
+                //这里判断一下文件长度来确定用户是否真的选择了文件，如果用户点击了"取消"，则文件长度为0
+                if (audioInput.files.length !== 0) {
+                    //只处理第一个文件
+                    that.file = audioInput.files[0];//将文件赋值到Visualizer对象的属性上
+                    that.fileName = that.file.name;
+                    if (that.status === 1) {
+                        //the sound is still playing but we upload another file, so set the forceStop flag to true
+                        that.forceStop = true;
+                    }
+                    ;
+                    document.getElementById('fileWrapper').style.opacity = 1;
+                    that._updateInfo('Uploading', true);
+                    //once the file is ready,start the visualizer
+                    that._start();
+                }
+                ;
+            };
+            //通过拖拽获取文件，这里添加拖拽的监听事件"dragenter","dragover","drop"
+            dropContainer.addEventListener("dragenter", function () {
+                document.getElementById('fileWrapper').style.opacity = 1;
+                that._updateInfo('Drop it on the page', true);
+            }, false);
+            dropContainer.addEventListener("dragover", function (e) {
+                e.stopPropagation();
+                e.preventDefault();
+                //set the drop mode
+                e.dataTransfer.dropEffect = 'copy';//设置文件类型为拷贝
+            }, false);
+            dropContainer.addEventListener("dragleave", function () {
+                document.getElementById('fileWrapper').style.opacity = 0.2;
+                that._updateInfo(that.info, false);
+            }, false);
+            dropContainer.addEventListener("drop", function (e) {
+                e.stopPropagation();
+                e.preventDefault();
+                if (that.audioContext === null) {
+                    return;
+                }
+                ;
+                document.getElementById('fileWrapper').style.opacity = 1;
+                that._updateInfo('Uploading', true);
+                that.file = e.dataTransfer.files[0];//获取文件，将文件赋值到Visualizer对象的属性上
+                if (that.status === 1) {
+                    document.getElementById('fileWrapper').style.opacity = 1;
+                    that.forceStop = true;
+                }
+                ;
+                that.fileName = that.file.name;
+                //once the file is ready,start the visualizer
+                that._start();
+            }, false);
+        },
+        _start: function () {
+            //read and decode the file into audio array buffer
+            var that = this,//当前this指代Visualizer对象，赋值给that以便在其他地方使用
+                    file = this.file,//从Visualizer对象上获取前面得到的文件
+                    fr = new FileReader();//实例化一个FileReader用于读取文件
+            fr.onload = function (e) {//文件读取完后调用此函数
+                var fileResult = e.target.result;//这是都区成功得到的结果ArrayBuffer数据
+                var audioContext = that.audioContext;//从Visualizer得到最开始实例化的AudioContext用来做解码ArrayBuffer
+                if (audioContext === null) {
+                    return;
+                }
+                ;
+                that._updateInfo('Decoding the audio', true);
+                audioContext.decodeAudioData(fileResult, function (buffer) {//解码成功则调用此函数，参数buffer为解码后得到的结果
+                    that._updateInfo('Decode succussfully,start the visualizer', true);
+                    that._visualize(audioContext, buffer);//调用_visualize进行下一步处理
+                }, function (e) {
+                    that._updateInfo('!Fail to decode the file', false);
+                    console.log(e);
+                });
+            };
+            fr.onerror = function (e) {
+                that._updateInfo('!Fail to read the file', false);
+                console.log(e);
+            };
+            //assign the file to the reader
+            this._updateInfo('Starting read the file', true);
+            //将上一步获取的文件传递给FileReader，从而将其读取为ArrayBuffer格式
+            fr.readAsArrayBuffer(file);
+        },
+        _visualize: function (audioContext, buffer) {
+            var audioBufferSouceNode = audioContext.createBufferSource(),
+                    analyser = audioContext.createAnalyser(),
+                    that = this;
+            //将source与分析器连接
+            audioBufferSouceNode.connect(analyser);
+            //将分析器与destination(the speaker)连接, 这样才能形成到达扬声器的通路
+            analyser.connect(audioContext.destination);
+            //将上一步解码得到的buffer数据赋值给source
+            audioBufferSouceNode.buffer = buffer;
+            //play the source
+            if (!audioBufferSouceNode.start) {
+                audioBufferSouceNode.start = audioBufferSouceNode.noteOn //in old browsers use noteOn method
+                audioBufferSouceNode.stop = audioBufferSouceNode.noteOff //in old browsers use noteOn method
+            }
+            ;
+            //stop the previous sound if any
+            if (this.animationId !== null) {
+                cancelAnimationFrame(this.animationId);
+            }
+            if (this.source !== null) {
+                this.source.stop(0);
+            }
+            audioBufferSouceNode.start(0);
+            this.status = 1;
+            this.source = audioBufferSouceNode;
+            audioBufferSouceNode.onended = function () {
+                that._audioEnd(that);
+            };
+            var musicname = document.getElementById("footer");
+            //调取文件名时去除后缀
+            if (this.fileName.indexOf(".mp3") !== -1) {
+                musicname.innerHTML = this.fileName.replace(/.mp3/, " ");
+            }
+            if (this.fileName.indexOf(".wav") !== -1) {
+                musicname.innerHTML = this.fileName.replace(/.wav/, " ");
+            }
+            document.getElementById('fileWrapper').style.opacity = 0.2;
+            this._drawSpectrum(analyser);
+        },
+        _drawSpectrum: function (analyser) {
+            var that = this,
+                    canvassss = document.getElementById('canvassss')
+            var ctxxxx = canvassss.getContext('2d')
+            var drawMeter = function () {
+                var array = new Uint8Array(analyser.frequencyBinCount);
+                analyser.getByteFrequencyData(array);
+
+                var step0 = 3, step1 = 2, bottomshu1 = 90, bottomshu2 = 90, leftshu1 = 180, leftshu2 = 180, leftshu3 = 180, leftshu4 = 180, leftshu5 = 180, leftshu6 = 180, rightshu1 = 0, rightshu2 = 0, rightshu3 = 0, rightshu4 = 0, rightshu5 = 0, rightshu6 = 0;
+                ctxxxx.clearRect(0, 0, canvassss.width, canvassss.height);
+                //绘制下面的弧线
+                do {
+                    that._drawBowen(ctxxxx, canvassss, bottomshu1, 220, 300, 6, '#eef1f8');
+                    bottomshu1 += step0;
+                } while (bottomshu1 <= 90 + array[765] && bottomshu1 <= 270)
+                that._drawBowen(ctxxxx, canvassss, bottomshu1, 225, 295, 6);
+                bottomshu1 += step0;
+                that._drawBowen(ctxxxx, canvassss, bottomshu1, 232, 288, 6);
+                bottomshu1 += step0;
+                that._drawBowen(ctxxxx, canvassss, bottomshu1, 239, 279, 6);
+                do {
+                    that._drawBowen(ctxxxx, canvassss, bottomshu2, 220, 300, 6);
+                    bottomshu2 -= step0;
+                } while (bottomshu2 >= 90 - array[765] && bottomshu2 >= -90)
+                that._drawBowen(ctxxxx, canvassss, bottomshu2, 225, 295, 6);
+                bottomshu2 -= step0;
+                that._drawBowen(ctxxxx, canvassss, bottomshu2, 232, 288, 6);
+                bottomshu2 -= step0;
+                that._drawBowen(ctxxxx, canvassss, bottomshu2, 239, 279, 6);
+                //绘制上面的十根线
+                that._drawHuxian(ctxxxx, canvassss, array[100] / 4, 210, 6, "#eef1f8", 91.4, 88.6);
+                that._drawHuxian(ctxxxx, canvassss, array[200] / 4, 220, 6, "#eef1f8", 91.3, 88.7);
+                that._drawHuxian(ctxxxx, canvassss, array[300] / 4, 230, 6, "#eef1f8", 91.2, 88.8);
+                that._drawHuxian(ctxxxx, canvassss, array[655] / 4, 240, 6, "#eef1f8", 91.1, 88.9);
+                that._drawHuxian(ctxxxx, canvassss, array[555] / 4, 250, 6, "#eef1f8", 91.1, 88.9);
+                that._drawHuxian(ctxxxx, canvassss, array[355] / 4, 260, 6, "#eef1f8", 91.1, 88.9);
+                that._drawHuxian(ctxxxx, canvassss, array[255] / 4, 270, 6, "#eef1f8", 91.1, 88.9);
+                that._drawHuxian(ctxxxx, canvassss, array[5] / 4, 280, 6, "#eef1f8", 91, 89);
+                that._drawHuxian(ctxxxx, canvassss, array[765] / 4, 290, 6, "#eef1f8", 91, 89);
+                that._drawHuxian(ctxxxx, canvassss, array[165] / 4, 300, 6, "#eef1f8", 91, 89);
+                //绘制左边的弧
+                //上半部
+                do {
+                    that._drawBowen(ctxxxx, canvassss, leftshu1, 320, 340, 6, "#eef1f8", 90);
+                    leftshu1 += step1;
+                } while (leftshu1 <= 180 + array[700] / 2 && leftshu1 <= 270)
+                do {
+                    that._drawBowen(ctxxxx, canvassss, leftshu2, 350, 370, 6, "#eef1f8", 90);
+                    leftshu2 += step1;
+                } while (leftshu2 <= 180 + array[757] / 2 && leftshu2 <= 270)
+                do {
+                    that._drawBowen(ctxxxx, canvassss, leftshu3, 380, 400, 6, "#eef1f8", 90);
+                    leftshu3 += step1;
+                } while (leftshu3 <= 180 + array[657] / 2 && leftshu3 <= 270)
+                //下半部
+                do {
+                    that._drawBowen(ctxxxx, canvassss, leftshu4, 320, 340, 6, "#eef1f8", 90);
+                    leftshu4 -= step1;
+                } while (leftshu4 >= 180 - array[700] / 2 && leftshu4 >= 90)
+                do {
+                    that._drawBowen(ctxxxx, canvassss, leftshu5, 350, 370, 6, "#eef1f8", 90);
+                    leftshu5 -= step1;
+                } while (leftshu5 >= 180 - array[757] / 2 && leftshu5 >= 90)
+                do {
+                    that._drawBowen(ctxxxx, canvassss, leftshu6, 380, 400, 6, "#eef1f8", 90);
+                    leftshu6 -= step1;
+                } while (leftshu6 >= 180 - array[657] / 2 && leftshu6 >= 90)
+                //绘制右边的弧
+                //下半部
+                do {
+                    that._drawBowen(ctxxxx, canvassss, rightshu1, 320, 340, 6, "#eef1f8", 90);
+                    rightshu1 += step1;
+                } while (rightshu1 <= 0 + array[700] / 2 && rightshu1 <= 90)
+                do {
+                    that._drawBowen(ctxxxx, canvassss, rightshu2, 350, 370, 6, "#eef1f8", 90);
+                    rightshu2 += step1;
+                } while (rightshu2 <= 0 + array[757] / 2 && rightshu2 <= 90)
+                do {
+                    that._drawBowen(ctxxxx, canvassss, rightshu3, 380, 400, 6, "#eef1f8", 90);
+                    rightshu3 += step1;
+                } while (rightshu3 <= 0 + array[657] / 2 && rightshu3 <= 90)
+                //上半部
+                do {
+                    that._drawBowen(ctxxxx, canvassss, rightshu4, 320, 340, 6, "#eef1f8", 90);
+                    rightshu4 -= step1;
+                } while (rightshu4 >= 0 - array[700] / 2 && rightshu4 >= -90)
+                do {
+                    that._drawBowen(ctxxxx, canvassss, rightshu5, 350, 370, 6, "#eef1f8", 90);
+                    rightshu5 -= step1;
+                } while (rightshu5 >= 0 - array[757] / 2 && rightshu5 >= -90)
+                do {
+                    that._drawBowen(ctxxxx, canvassss, rightshu6, 380, 400, 6, "#eef1f8", 90);
+                    rightshu6 -= step1;
+                } while (rightshu6 >= 0 - array[657] / 2 && rightshu6 >= -90)
+
+
+                requestAnimationFrame(drawMeter);
+            }
+            requestAnimationFrame(drawMeter);
+        },
+        _drawBowen: function (ctx, cas, i, Rline1, Rline2, linewidth, SStyle) {
+            ctx.beginPath()
+            ctx.lineCap = "round";
+            var x0 = 404 + Math.cos(i * Math.PI / 180) * Rline1;
+            var y0 = cas.height / 2 + Math.sin(i * Math.PI / 180) * Rline1;
+            var x1 = 404 + Math.cos(i * Math.PI / 180) * Rline2;
+            var y1 = cas.height / 2 + Math.sin(i * Math.PI / 180) * Rline2;
+            ctx.moveTo(x0, y0);
+            ctx.lineTo(x1, y1);
+            ctx.lineWidth = linewidth;
+//            var grad = ctx.createRadialGradient(650,360,Rline1,650,360,Rline2);
+//            grad.addColorStop(0,'#2787ff');
+//            grad.addColorStop(0.25,'#44a8e2');
+//            grad.addColorStop(0.5,'#5bc5fb');
+//            grad.addColorStop(0.75,'#44a8e2');
+//            grad.addColorStop(1,'#2787ff');
+//            ctx.shadowColor='#2de3ff';
+//            ctx.shadowBlur=80;
+            ctx.strokeStyle = SStyle;
+            ctx.stroke();
+        },
+        _drawHuxian: function (ctx, cas, value, R, linewidth, SStyle, angle1, angle2) {
+            ctx.beginPath()
+            ctx.lineWidth = linewidth;
+            ctx.strokeStyle = SStyle;
+            ctx.arc(404, cas.height / 2, R, -angle1 * Math.PI / 180, (-angle1 - value) * Math.PI / 180, true);
+            ctx.stroke();
+            ctx.beginPath()
+            ctx.lineWidth = linewidth;
+            ctx.strokeStyle = SStyle;
+            ctx.arc(404, cas.height / 2, R, -angle2 * Math.PI / 180, (-angle2 + value) * Math.PI / 180);
+            ctx.stroke();
+        },
+        _audioEnd: function (instance) {
+            if (this.forceStop) {
+                this.forceStop = false;
+                this.status = 1;
+                return;
+            }
+            ;
+            this.status = 0;
+            var text = 'HTML5 Audio API | An Audio Viusalizer';
+            document.getElementById('fileWrapper').style.opacity = 1;
+            document.getElementById('info').innerHTML = text;
+            instance.info = text;
+            document.getElementById('uploadedFile').value = '';
+        },
+        _updateInfo: function (text, processing) {
+            var infoBar = document.getElementById('info'),
+                    dots = '...',
+                    i = 0,
+                    that = this;
+            infoBar.innerHTML = text + dots.substring(0, i++);
+            if (this.infoUpdateId !== null) {
+                clearTimeout(this.infoUpdateId);
+            }
+            ;
+            if (processing) {
+                //animate dots at the end of the info text
+                var animateDot = function () {
+                    if (i > 3) {
+                        i = 0
+                    }
+                    ;
+                    infoBar.innerHTML = text + dots.substring(0, i++);
+                    that.infoUpdateId = setTimeout(animateDot, 250);
+                }
+                this.infoUpdateId = setTimeout(animateDot, 250);
+            }
+            ;
+        }
+    }
+</script>
+
+</body>
+</html>
